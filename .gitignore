@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.DS_Store
+*.log
+.playwright/
+.claude/settings.local.json

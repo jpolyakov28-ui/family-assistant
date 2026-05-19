@@ -1,0 +1,11 @@
+.venv/
+.playwright/
+__pycache__/
+*.pyc
+.env
+.env.local
+.git/
+.gitignore
+*.log
+*.png
+scripts/
