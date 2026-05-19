@@ -14,6 +14,7 @@ from aiogram.types import BotCommand, ErrorEvent
 from bot.config import TELEGRAM_BOT_TOKEN
 from bot.ephemeral import setup_ephemeral
 from bot.handlers import router
+from bot.migrations import apply_migrations
 from bot.scheduler import start_scheduler
 
 BOT_COMMANDS = [
@@ -36,6 +37,8 @@ log = logging.getLogger(__name__)
 
 
 async def main() -> None:
+    apply_migrations()
+
     bot = Bot(
         token=TELEGRAM_BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
