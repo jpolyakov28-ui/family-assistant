@@ -15,6 +15,27 @@ jobs:
           curl -fsSL https://railway.com/install.sh | bash
           echo "$HOME/.railway/bin" >> $GITHUB_PATH
 
+      - name: Link Railway project
+        run: |
+          PROJECT_PATH="$GITHUB_WORKSPACE"
+          mkdir -p "$HOME/.railway"
+          cat > "$HOME/.railway/config.json" <<EOF
+          {
+            "projects": {
+              "$PROJECT_PATH": {
+                "projectPath": "$PROJECT_PATH",
+                "name": "powerful-nurturing",
+                "project": "debec8ba-d05c-460f-82ed-ac7f7cd72801",
+                "environment": "b3aacad6-acae-4e91-b845-c69e94599193",
+                "environmentName": "production",
+                "service": null
+              }
+            },
+            "user": { "id": null, "token": null, "accessToken": null, "refreshToken": null, "tokenExpiresAt": null },
+            "linkedFunctions": null
+          }
+          EOF
+
       - name: Deploy
         run: railway up --service powerful-nurturing --detach
         env:
