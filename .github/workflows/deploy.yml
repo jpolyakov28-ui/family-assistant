@@ -32,23 +32,32 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
 
-      - name: Make package public
-        run: |
-          curl -s -X PATCH \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            "https://api.github.com/user/packages/container/family-assistant/versions" || true
-
       - name: Update Railway service image and redeploy
         run: |
           IMAGE="ghcr.io/${{ github.repository }}:latest"
-          # Update service instance to use Docker image
+          echo "Setting Railway service source to $IMAGE"
           curl -s -X POST "https://backboard.railway.com/graphql/v2" \
             -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"query\": \"mutation { serviceInstanceUpdate(input: { serviceId: \\\"6ea35fed-0c24-4269-8bce-29c14dee6ef7\\\", environmentId: \\\"b3aacad6-acae-4e91-b845-c69e94599193\\\", source: { image: \\\"$IMAGE\\\" } }) }\"}" | cat
-          # Trigger redeploy
+            -d "{\"query\": \"mutation { serviceInstanceUpdate(serviceId: \\\"6ea35fed-0c24-4269-8bce-29c14dee6ef7\\\", environmentId: \\\"b3aacad6-acae-4e91-b845-c69e94599193\\\", input: { source: { image: \\\"$IMAGE\\\" } }) }\"}" | tee /tmp/update_result.json
+          echo ""
+          echo "Triggering redeploy..."
           curl -s -X POST "https://backboard.railway.com/graphql/v2" \
             -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"query": "mutation { serviceInstanceRedeploy(environmentId: \"b3aacad6-acae-4e91-b845-c69e94599193\", serviceId: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\") }"}' | cat
+            -d '{"query": "mutation { serviceInstanceRedeploy(serviceId: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\", environmentId: \"b3aacad6-acae-4e91-b845-c69e94599193\") }"}' | tee /tmp/redeploy_result.json
+          echo ""
+          # If redeploy failed, try deploymentRedeploy on the latest deployment
+          if grep -q "Problem processing" /tmp/redeploy_result.json 2>/dev/null; then
+            echo "serviceInstanceRedeploy failed, fetching latest deployment ID..."
+            LATEST_DEPLOY=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d '{"query": "{ service(id: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\") { deployments(first: 1) { edges { node { id } } } } }"}' | \
+              python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data']['service']['deployments']['edges'][0]['node']['id'])" 2>/dev/null)
+            echo "Latest deployment: $LATEST_DEPLOY"
+            curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"mutation { deploymentRedeploy(id: \\\"$LATEST_DEPLOY\\\", usePreviousImageTag: false) { id status } }\"}"
+          fi
