@@ -553,3 +553,48 @@ def remove_shopping_item(owner: str, index: int) -> None:
     if 0 <= index < len(current):
         current.pop(index)
         set_shopping_items(owner, current)
+
+
+# ---------- recipes (книга рецептов) ----------
+
+RECIPE_CATEGORIES = ("soup", "hot", "salad", "baking")
+
+
+def list_recipes(category: str | None = None) -> list[dict]:
+    q = get_client().table("recipes").select("*").order("name")
+    if category:
+        q = q.eq("category", category)
+    return q.execute().data or []
+
+
+def get_recipe(recipe_id: str) -> dict | None:
+    res = get_client().table("recipes").select("*").eq("id", recipe_id).limit(1).execute()
+    return res.data[0] if res.data else None
+
+
+def upsert_recipe(
+    *,
+    recipe_id: str | None = None,
+    name: str | None = None,
+    category: str | None = None,
+    ingredients: list[str] | None = None,
+    instructions: str | None = None,
+) -> dict:
+    payload: dict[str, Any] = {"updated_at": datetime.utcnow().isoformat()}
+    if name is not None:
+        payload["name"] = name
+    if category is not None:
+        payload["category"] = category
+    if ingredients is not None:
+        payload["ingredients"] = ingredients
+    if instructions is not None:
+        payload["instructions"] = instructions
+    if recipe_id:
+        res = get_client().table("recipes").update(payload).eq("id", recipe_id).execute()
+    else:
+        res = get_client().table("recipes").insert(payload).execute()
+    return res.data[0]
+
+
+def delete_recipe(recipe_id: str) -> None:
+    get_client().table("recipes").delete().eq("id", recipe_id).execute()

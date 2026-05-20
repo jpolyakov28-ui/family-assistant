@@ -51,6 +51,7 @@ def _menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=f"{_DAY_NAMES_RU[code]} 🥣", callback_data=f"menu:slot:{code}:lunch"),
             InlineKeyboardButton(text=f"{_DAY_NAMES_RU[code]} 🍴", callback_data=f"menu:slot:{code}:dinner"),
         ])
+    rows.append([InlineKeyboardButton(text="📖 Книга рецептов", callback_data="rcb:cats")])
     rows.append([InlineKeyboardButton(text="🛒 Список покупок", callback_data="menu:shop")])
     rows.append([InlineKeyboardButton(text="⬅️ Семейный ассистент", callback_data="home:show")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -95,6 +96,7 @@ def _slot_kb(weekday: str, meal: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Блюдо", callback_data=f"menu:dish:{weekday}:{meal}")],
             [InlineKeyboardButton(text="✏️ Ингредиенты", callback_data=f"menu:ing:{weekday}:{meal}")],
+            [InlineKeyboardButton(text="📖 Из книги рецептов", callback_data=f"rcp:cats:{weekday}:{meal}")],
             [InlineKeyboardButton(text="🗑 Очистить", callback_data=f"menu:clearask:{weekday}:{meal}")],
             [InlineKeyboardButton(text="← К меню", callback_data="menu:open")],
             [InlineKeyboardButton(text="⬅️ Семейный ассистент", callback_data="home:show")],

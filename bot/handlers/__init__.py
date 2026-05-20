@@ -1,7 +1,7 @@
 from aiogram import Router
 
 from bot.handlers import (
-    add, cleaning, common, edit, freetext, home, meds, menu, schedule,
+    add, cleaning, common, edit, freetext, home, meds, menu, recipes, schedule,
     shopping, start, tasks, today,
 )
 
@@ -12,6 +12,7 @@ router.include_router(today.router)
 router.include_router(tasks.router)
 router.include_router(schedule.router)
 router.include_router(menu.router)
+router.include_router(recipes.router)
 router.include_router(cleaning.router)
 router.include_router(meds.router)
 router.include_router(shopping.router)
