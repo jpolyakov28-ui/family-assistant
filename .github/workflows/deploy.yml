@@ -4,39 +4,51 @@ on:
   push:
     branches: [main]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: |
-          curl -fsSL https://railway.com/install.sh | bash
-          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Link Railway project
-        run: |
-          PROJECT_PATH="$GITHUB_WORKSPACE"
-          mkdir -p "$HOME/.railway"
-          cat > "$HOME/.railway/config.json" <<EOF
-          {
-            "projects": {
-              "$PROJECT_PATH": {
-                "projectPath": "$PROJECT_PATH",
-                "name": "powerful-nurturing",
-                "project": "debec8ba-d05c-460f-82ed-ac7f7cd72801",
-                "environment": "b3aacad6-acae-4e91-b845-c69e94599193",
-                "environmentName": "production",
-                "service": null
-              }
-            },
-            "user": { "id": null, "token": null, "accessToken": null, "refreshToken": null, "tokenExpiresAt": null },
-            "linkedFunctions": null
-          }
-          EOF
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
 
-      - name: Deploy
-        run: railway up --service powerful-nurturing --detach
-        env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      - name: Make package public
+        run: |
+          curl -s -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/user/packages/container/family-assistant/versions" || true
+
+      - name: Update Railway service image and redeploy
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:latest"
+          # Update service instance to use Docker image
+          curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"mutation { serviceInstanceUpdate(input: { serviceId: \\\"6ea35fed-0c24-4269-8bce-29c14dee6ef7\\\", environmentId: \\\"b3aacad6-acae-4e91-b845-c69e94599193\\\", source: { image: \\\"$IMAGE\\\" } }) }\"}" | cat
+          # Trigger redeploy
+          curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "mutation { serviceInstanceRedeploy(environmentId: \"b3aacad6-acae-4e91-b845-c69e94599193\", serviceId: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\") }"}' | cat
