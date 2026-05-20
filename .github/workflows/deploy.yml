@@ -4,60 +4,46 @@ on:
   push:
     branches: [main]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ghcr.io/${{ github.repository }}:latest
-
-      - name: Update Railway service image and redeploy
+      - name: Create deploy archive
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          echo "Setting Railway service source to $IMAGE"
-          curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+          tar -czf /tmp/deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            --exclude='*.log' \
+            --exclude='*.png' \
+            --exclude='.playwright' \
+            --exclude='scripts' \
+            --exclude='.ruff_cache' \
+            --exclude='.claude' \
+            .
+          ls -lh /tmp/deploy.tar.gz
+
+      - name: Upload to Railway
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://backboard.railway.com/project/debec8ba-d05c-460f-82ed-ac7f7cd72801/environment/b3aacad6-acae-4e91-b845-c69e94599193/up?serviceId=6ea35fed-0c24-4269-8bce-29c14dee6ef7" \
             -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\": \"mutation { serviceInstanceUpdate(serviceId: \\\"6ea35fed-0c24-4269-8bce-29c14dee6ef7\\\", environmentId: \\\"b3aacad6-acae-4e91-b845-c69e94599193\\\", input: { source: { image: \\\"$IMAGE\\\" } }) }\"}" | tee /tmp/update_result.json
-          echo ""
-          echo "Triggering redeploy..."
-          curl -s -X POST "https://backboard.railway.com/graphql/v2" \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"query": "mutation { serviceInstanceRedeploy(serviceId: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\", environmentId: \"b3aacad6-acae-4e91-b845-c69e94599193\") }"}' | tee /tmp/redeploy_result.json
-          echo ""
-          # If redeploy failed, try deploymentRedeploy on the latest deployment
-          if grep -q "Problem processing" /tmp/redeploy_result.json 2>/dev/null; then
-            echo "serviceInstanceRedeploy failed, fetching latest deployment ID..."
-            LATEST_DEPLOY=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
-              -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d '{"query": "{ service(id: \"6ea35fed-0c24-4269-8bce-29c14dee6ef7\") { deployments(first: 1) { edges { node { id } } } } }"}' | \
-              python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data']['service']['deployments']['edges'][0]['node']['id'])" 2>/dev/null)
-            echo "Latest deployment: $LATEST_DEPLOY"
-            curl -s -X POST "https://backboard.railway.com/graphql/v2" \
-              -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"query\": \"mutation { deploymentRedeploy(id: \\\"$LATEST_DEPLOY\\\", usePreviousImageTag: false) { id status } }\"}"
+            -H "Content-Type: application/gzip" \
+            --data-binary @/tmp/deploy.tar.gz \
+            --max-time 300)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Upload failed with status $HTTP_CODE"
+            exit 1
           fi
+          echo "Upload successful!"
