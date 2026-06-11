@@ -12,8 +12,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, ErrorEvent
 
 from bot.config import TELEGRAM_BOT_TOKEN
+from bot.db import list_users
 from bot.ephemeral import setup_ephemeral
 from bot.handlers import router
+from bot.handlers.home import broadcast_home
 from bot.migrations import apply_migrations
 from bot.scheduler import start_scheduler
 
@@ -77,6 +79,8 @@ async def main() -> None:
     try:
         await bot.set_my_commands(BOT_COMMANDS)
         log.info("Bot starting…")
+        tids = [u["telegram_id"] for u in list_users() if u.get("telegram_id")]
+        await broadcast_home(bot, tids)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         scheduler.shutdown()

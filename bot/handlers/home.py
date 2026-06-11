@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from aiogram import F, Router
+import logging
+
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -11,6 +13,8 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+
+log = logging.getLogger(__name__)
 
 from bot.db import get_user_by_telegram_id, list_family_routine_events
 from bot.handlers.add import AddTask
@@ -57,6 +61,22 @@ def _home_kb() -> InlineKeyboardMarkup:
 
 async def send_home(message: Message) -> None:
     await message.answer(HOME_TEXT, parse_mode="HTML", reply_markup=_home_kb())
+
+
+async def broadcast_home(bot: Bot, telegram_ids: list[int]) -> None:
+    """Отправляет свежий экран «Семейный ассистент» каждому пользователю.
+    Вызывается при старте бота, чтобы экран всегда был последним сообщением.
+    """
+    for tid in telegram_ids:
+        try:
+            await bot.send_message(
+                chat_id=tid,
+                text=HOME_TEXT,
+                parse_mode="HTML",
+                reply_markup=_home_kb(),
+            )
+        except Exception as e:
+            log.warning("startup home to %s failed: %s", tid, e)
 
 
 @router.message(Command("home"))

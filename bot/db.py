@@ -52,9 +52,16 @@ def create_user(telegram_id: int, name: str, timezone: str = "Europe/Moscow") ->
     return res.data[0]
 
 
+_USER_DISPLAY_ORDER = ["Папа", "Мама", "Леня", "Полина", "Тамара", "Михаил", "Захар", "Антонина"]
+
+
 def list_users() -> list[dict]:
-    res = get_client().table("users").select("*").order("name").execute()
-    return res.data or []
+    res = get_client().table("users").select("*").execute()
+    users = res.data or []
+    return sorted(
+        users,
+        key=lambda u: _USER_DISPLAY_ORDER.index(u["name"]) if u["name"] in _USER_DISPLAY_ORDER else len(_USER_DISPLAY_ORDER),
+    )
 
 
 # ---------- tasks ----------
@@ -353,7 +360,7 @@ def set_cook_for_weekday(task_id: str, weekday: str, user_id: str | None) -> Non
 
 # ---------- meal plans ----------
 
-MEALS = ("lunch", "dinner")
+MEALS = ("lunch", "dinner", "chef")
 
 
 def list_meal_plans() -> list[dict]:

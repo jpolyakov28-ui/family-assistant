@@ -29,6 +29,7 @@ router = Router()
 class MealEdit(StatesGroup):
     dish = State()
     ingredients = State()
+    chef = State()
 
 
 _DAY_NAMES_RU = {
@@ -48,8 +49,8 @@ def _menu_kb() -> InlineKeyboardMarkup:
     rows = []
     for code in WEEKDAY_CODES:
         rows.append([
-            InlineKeyboardButton(text=f"{_DAY_NAMES_RU[code]} 🥣", callback_data=f"menu:slot:{code}:lunch"),
-            InlineKeyboardButton(text=f"{_DAY_NAMES_RU[code]} 🍴", callback_data=f"menu:slot:{code}:dinner"),
+            InlineKeyboardButton(text=_DAY_NAMES_RU[code], callback_data=f"menu:day:{code}"),
+            InlineKeyboardButton(text=f"👨‍🍳 {_DAY_NAMES_RU[code]}", callback_data=f"menu:chef:{code}"),
         ])
     rows.append([InlineKeyboardButton(text="📖 Книга рецептов", callback_data="rcb:cats")])
     rows.append([InlineKeyboardButton(text="🛒 Список покупок", callback_data="menu:shop")])
@@ -62,11 +63,13 @@ def _render_week() -> str:
     by_key = {(p["weekday"], p["meal"]): p for p in plans}
     lines = ["<b>🍽 Меню на неделю</b>", ""]
     for code in WEEKDAY_CODES:
-        lines.append(f"<b>{_DAY_NAMES_FULL[code]}</b>")
-        for meal in ("lunch", "dinner"):
-            slot = by_key.get((code, meal))
-            dish = (slot or {}).get("dish") or "—"
-            lines.append(f"  {_MEAL_ICON[meal]} {_MEAL_LABEL[meal]}: {dish}")
+        lunch_dish = (by_key.get((code, "lunch")) or {}).get("dish") or "—"
+        dinner_dish = (by_key.get((code, "dinner")) or {}).get("dish") or "—"
+        chef = (by_key.get((code, "chef")) or {}).get("dish") or "—"
+        lines.append(
+            f"<b>{_DAY_NAMES_FULL[code]}</b>  👨‍🍳 {chef}\n"
+            f"  🥣 {lunch_dish}  🍴 {dinner_dish}"
+        )
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -89,7 +92,51 @@ async def cb_menu_open(callback: CallbackQuery) -> None:
         await callback.message.answer(_render_week(), parse_mode="HTML", reply_markup=_menu_kb())
 
 
-# ---------- экран одного слота ----------
+# ---------- экран одного дня (обед + ужин) ----------
+
+def _day_kb(weekday: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🥣 Обед", callback_data=f"menu:slot:{weekday}:lunch"),
+                InlineKeyboardButton(text="🍴 Ужин", callback_data=f"menu:slot:{weekday}:dinner"),
+            ],
+            [InlineKeyboardButton(text="← К меню", callback_data="menu:open")],
+            [InlineKeyboardButton(text="⬅️ Семейный ассистент", callback_data="home:show")],
+        ]
+    )
+
+
+def _render_day(weekday: str) -> str:
+    lines = [f"<b>{_DAY_NAMES_FULL[weekday]}</b>", ""]
+    for meal in ("lunch", "dinner"):
+        slot = get_meal_plan(weekday, meal) or {}
+        dish = slot.get("dish") or "—"
+        ingredients = slot.get("ingredients") or []
+        lines.append(f"{_MEAL_ICON[meal]} {_MEAL_LABEL[meal]}: {dish}")
+        if ingredients:
+            lines.append(f"   🧺 {', '.join(ingredients)}")
+    return "\n".join(lines)
+
+
+@router.callback_query(F.data.startswith("menu:day:"))
+async def cb_day(callback: CallbackQuery) -> None:
+    weekday = callback.data.split(":")[2]
+    if weekday not in WEEKDAY_CODES:
+        await callback.answer("Бяка", show_alert=True)
+        return
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            _render_day(weekday), parse_mode="HTML", reply_markup=_day_kb(weekday),
+        )
+    except Exception:
+        await callback.message.answer(
+            _render_day(weekday), parse_mode="HTML", reply_markup=_day_kb(weekday),
+        )
+
+
+# ---------- экран одного слота (обед или ужин) ----------
 
 def _slot_kb(weekday: str, meal: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -98,7 +145,7 @@ def _slot_kb(weekday: str, meal: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="✏️ Ингредиенты", callback_data=f"menu:ing:{weekday}:{meal}")],
             [InlineKeyboardButton(text="📖 Из книги рецептов", callback_data=f"rcp:cats:{weekday}:{meal}")],
             [InlineKeyboardButton(text="🗑 Очистить", callback_data=f"menu:clearask:{weekday}:{meal}")],
-            [InlineKeyboardButton(text="← К меню", callback_data="menu:open")],
+            [InlineKeyboardButton(text="← К дню", callback_data=f"menu:day:{weekday}")],
             [InlineKeyboardButton(text="⬅️ Семейный ассистент", callback_data="home:show")],
         ]
     )
@@ -244,14 +291,98 @@ async def cb_clearyes(callback: CallbackQuery) -> None:
         pass
 
 
+# ---------- шеф-повар ----------
+
+def _chef_kb(weekday: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ Изменить", callback_data=f"menu:chefset:{weekday}")],
+            [InlineKeyboardButton(text="🗑 Очистить", callback_data=f"menu:chefclear:{weekday}")],
+            [InlineKeyboardButton(text="← К меню", callback_data="menu:open")],
+            [InlineKeyboardButton(text="⬅️ Семейный ассистент", callback_data="home:show")],
+        ]
+    )
+
+
+def _render_chef(weekday: str) -> str:
+    slot = get_meal_plan(weekday, "chef") or {}
+    chef = slot.get("dish") or "—"
+    return f"<b>👨‍🍳 Шеф-повар — {_DAY_NAMES_FULL[weekday]}</b>\n\n{chef}"
+
+
+@router.callback_query(F.data.startswith("menu:chef:"))
+async def cb_chef(callback: CallbackQuery) -> None:
+    weekday = callback.data.split(":")[2]
+    if weekday not in WEEKDAY_CODES:
+        await callback.answer("Бяка", show_alert=True)
+        return
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            _render_chef(weekday), parse_mode="HTML", reply_markup=_chef_kb(weekday),
+        )
+    except Exception:
+        await callback.message.answer(
+            _render_chef(weekday), parse_mode="HTML", reply_markup=_chef_kb(weekday),
+        )
+
+
+@router.callback_query(F.data.startswith("menu:chefset:"))
+async def cb_chefset(callback: CallbackQuery, state: FSMContext) -> None:
+    weekday = callback.data.split(":")[2]
+    if weekday not in WEEKDAY_CODES:
+        await callback.answer("Бяка", show_alert=True)
+        return
+    await state.update_data(chef_weekday=weekday)
+    await state.set_state(MealEdit.chef)
+    await callback.answer()
+    await callback.message.answer(
+        f"Кто дежурит по кухне в {_DAY_NAMES_FULL[weekday].lower()}? Напиши имя.",
+        reply_markup=cancel_kb(),
+    )
+
+
+@router.message(MealEdit.chef, F.text)
+async def on_chef(message: Message, state: FSMContext) -> None:
+    name = (message.text or "").strip()
+    if not name or len(name) > 100:
+        await message.answer("От 1 до 100 символов.")
+        return
+    data = await state.get_data()
+    weekday = data.get("chef_weekday")
+    if not weekday:
+        await state.clear()
+        return
+    upsert_meal_plan(weekday, "chef", dish=name)
+    await state.clear()
+    await message.answer(
+        _render_chef(weekday), parse_mode="HTML", reply_markup=_chef_kb(weekday),
+    )
+
+
+@router.callback_query(F.data.startswith("menu:chefclear:"))
+async def cb_chefclear(callback: CallbackQuery) -> None:
+    weekday = callback.data.split(":")[2]
+    clear_meal_plan(weekday, "chef")
+    await callback.answer("Очищено")
+    try:
+        await callback.message.edit_text(
+            _render_chef(weekday), parse_mode="HTML", reply_markup=_chef_kb(weekday),
+        )
+    except Exception:
+        pass
+
+
 # ---------- список покупок ----------
 
 @router.callback_query(F.data == "menu:shop")
 async def cb_shop(callback: CallbackQuery) -> None:
     plans = list_meal_plans()
     counter: dict[str, int] = {}
-    order: list[str] = []  # для стабильного порядка по первому появлению
+    order: list[str] = []
     for p in plans:
+        if p.get("meal") == "chef":
+            continue
         for ing in (p.get("ingredients") or []):
             key = ing.strip().lower()
             if not key:
@@ -264,7 +395,6 @@ async def cb_shop(callback: CallbackQuery) -> None:
     if not order:
         text = "🛒 <b>Список покупок</b>\n\nПока пусто — заполни ингредиенты в слотах меню."
     else:
-        # сортируем по убыванию частоты, потом по алфавиту
         sorted_items = sorted(order, key=lambda x: (-counter[x.lower()], x.lower()))
         lines = ["🛒 <b>Список покупок</b>", ""]
         for item in sorted_items:

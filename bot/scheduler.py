@@ -164,7 +164,7 @@ async def _recipients_for_task(task: dict) -> list[int]:
     visibility = task.get("visibility", "assignees")
 
     if visibility == "family":
-        return [u["telegram_id"] for u in list_users()]
+        return [u["telegram_id"] for u in list_users() if u["telegram_id"]]
 
     res = (
         client.table("task_assignees")
@@ -181,7 +181,7 @@ async def _recipients_for_task(task: dict) -> list[int]:
         .in_("id", user_ids)
         .execute()
     )
-    return [u["telegram_id"] for u in (users_res.data or [])]
+    return [u["telegram_id"] for u in (users_res.data or []) if u["telegram_id"]]
 
 
 def start_scheduler(bot: Bot) -> AsyncIOScheduler:

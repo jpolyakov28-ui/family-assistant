@@ -81,7 +81,10 @@ async def cb_open(callback: CallbackQuery) -> None:
 
 def _list_kb(idx: int, items: list[str]) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text=f"🗑 {i + 1}", callback_data=f"shop:rmask:{idx}:{i}")]
+        [
+            InlineKeyboardButton(text=f"🗑 {i + 1} Корзина", callback_data=f"shop:rmask:{idx}:{i}"),
+            InlineKeyboardButton(text=f"✅ {i + 1} Куплено", callback_data=f"shop:done:{idx}:{i}"),
+        ]
         for i in range(len(items))
     ]
     rows.append([InlineKeyboardButton(text="➕ Добавить", callback_data=f"shop:add:{idx}")])
@@ -180,6 +183,30 @@ async def on_item(message: Message, state: FSMContext) -> None:
     await state.clear()
     text, lst_items = _render_list(idx)
     await message.answer(text, parse_mode="HTML", reply_markup=_list_kb(idx, lst_items))
+
+
+@router.callback_query(F.data.startswith("shop:done:"))
+async def cb_done(callback: CallbackQuery) -> None:
+    """Купили — удалить пункт сразу, без подтверждения."""
+    parts = callback.data.split(":")
+    try:
+        idx = int(parts[2])
+        item_i = int(parts[3])
+        _OWNERS[idx]
+    except (ValueError, IndexError):
+        await callback.answer("Не нашёл", show_alert=True)
+        return
+    items = list((get_shopping_list(_OWNERS[idx]) or {}).get("items") or [])
+    if not (0 <= item_i < len(items)):
+        await callback.answer("Пункт уже удалён", show_alert=True)
+        return
+    remove_shopping_item(_OWNERS[idx], item_i)
+    await callback.answer("✅ Куплено!")
+    text, new_items = _render_list(idx)
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=_list_kb(idx, new_items))
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("shop:rmask:"))

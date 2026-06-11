@@ -101,13 +101,14 @@ def _lead_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🔔 Только в момент", callback_data="lead:0")],
             [
-                InlineKeyboardButton(text="+ за 15 мин", callback_data="lead:15"),
-                InlineKeyboardButton(text="+ за час", callback_data="lead:60"),
+                InlineKeyboardButton(text="+ за 30 мин", callback_data="lead:30"),
+                InlineKeyboardButton(text="+ за 2 часа", callback_data="lead:120"),
             ],
             [
                 InlineKeyboardButton(text="+ за день", callback_data="lead:1440"),
-                InlineKeyboardButton(text="+ за день и час", callback_data="lead:1440_60"),
+                InlineKeyboardButton(text="+ за день и 2 часа", callback_data="lead:1440_120"),
             ],
+            [InlineKeyboardButton(text="🔕 Без напоминания", callback_data="lead:none")],
             [cancel_button()],
             [HOME_BUTTON],
         ]
@@ -121,7 +122,7 @@ def _category_kb(include_routine: bool = True) -> InlineKeyboardMarkup:
     if include_routine:
         rows.append([InlineKeyboardButton(text="🏠 Рутина (семейная база)", callback_data="cat:routine")])
     rows += [
-        [InlineKeyboardButton(text="📚 Занятие", callback_data="cat:lesson")],
+        [InlineKeyboardButton(text="📚 Образование", callback_data="cat:lesson")],
         [InlineKeyboardButton(text="🚗 Поездка", callback_data="cat:trip")],
         [InlineKeyboardButton(text="💼 Работа", callback_data="cat:work")],
         [InlineKeyboardButton(text="🎉 Поздравления", callback_data="cat:congrats")],
@@ -344,8 +345,11 @@ async def add_lead_text(message: Message, state: FSMContext) -> None:
 async def add_lead(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()  # всегда отвечаем первым, иначе Telegram покажет «что-то пошло не так»
     payload = callback.data.split(":", 1)[1]
-    pre = [int(x) for x in payload.split("_") if x.isdigit() and int(x) > 0]
-    lead_minutes = sorted(set(pre + [0]), reverse=True)
+    if payload == "none":
+        lead_minutes: list[int] = []
+    else:
+        pre = [int(x) for x in payload.split("_") if x.isdigit() and int(x) > 0]
+        lead_minutes = sorted(set(pre + [0]), reverse=True)
 
     data = await state.get_data()
     due_at_iso = data.get("due_at_iso")
