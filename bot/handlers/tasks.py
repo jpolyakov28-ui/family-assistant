@@ -25,6 +25,11 @@ router = Router()
 _WEEKDAY_NAMES_RU = [
     "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье",
 ]
+_WEEKDAY_SHORT_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+_MONTHS_RU = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
 
 
 def _menu_kb() -> InlineKeyboardMarkup:
@@ -146,10 +151,54 @@ async def cb_month(callback: CallbackQuery) -> None:
     await _render_range(callback.message, callback.from_user.id, days=30, header_text="📅 На месяц:")
 
 
+async def _render_year(message: Message, telegram_id: int) -> None:
+    user = get_user_by_telegram_id(telegram_id)
+    if not user:
+        await message.answer("Сначала зарегистрируйся: /start")
+        return
+    tz = user["timezone"]
+    tzinfo = ZoneInfo(tz)
+    now = datetime.now(tzinfo)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=365)
+    tasks = list_tasks_for_user(
+        user["id"], due_from=start, due_to=end,
+        include_family=True, only_open=True,
+    )
+    if not tasks:
+        await message.answer("На год задач нет 🎉")
+        return
+
+    by_month: dict[tuple, list] = {}
+    for t in tasks:
+        dt = datetime.fromisoformat(t["due_at"].replace("Z", "+00:00")).astimezone(tzinfo)
+        key = (dt.year, dt.month)
+        by_month.setdefault(key, []).append((dt, t))
+
+    for (year, month), items in sorted(by_month.items()):
+        await message.answer(
+            f"<b>📅 {_MONTHS_RU[month]} {year}</b>",
+            parse_mode="HTML",
+        )
+        for dt, t in items:
+            day_short = _WEEKDAY_SHORT_RU[dt.weekday()]
+            if t.get("due_has_time"):
+                date_line = f"<b>{dt.day:02d}.{month:02d}  {day_short}  {dt.strftime('%H:%M')}</b>"
+            else:
+                date_line = f"<b>{dt.day:02d}.{month:02d}  {day_short}</b>"
+            visibility_marker = {"private": "🔒", "family": "👨‍👩‍👧‍👦"}.get(t.get("visibility", ""), "")
+            title_line = f"{visibility_marker} {t['title']}" if visibility_marker else t["title"]
+            await message.answer(
+                f"{date_line}\n{title_line}",
+                parse_mode="HTML",
+                reply_markup=_task_keyboard(t),
+            )
+
+
 @router.callback_query(F.data == "tsk:year")
 async def cb_year(callback: CallbackQuery) -> None:
     await callback.answer()
-    await _render_range(callback.message, callback.from_user.id, days=365, header_text="📆 На год:")
+    await _render_year(callback.message, callback.from_user.id)
 
 
 @router.callback_query(F.data == "tsk:add")
